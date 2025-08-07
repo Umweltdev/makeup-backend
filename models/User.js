@@ -17,6 +17,12 @@ const UserSchema = new mongoose.Schema({
     country: {
       type: String,
     },
+    status: {
+      type: String,
+      required: true,
+      enum: ["Checked-Out", "Checked-in", "Reserved"],
+      default: "Checked-Out",
+    },
     img: {
       type: String,
     },
@@ -29,6 +35,11 @@ const UserSchema = new mongoose.Schema({
     isAdmin: {
       type: Boolean,
       default: false,
+    },
+    role: {
+      type: String,
+      default: "customer",
+      enum: ["customer", "admin"],
     },
 }, { timestamps: true, toJSON: { virtuals: true } });
 

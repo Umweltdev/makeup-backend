@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import authRoute from "./routes/auth.js";
 import usersRoute from "./routes/users.js";
+import servicesRoute from "./routes/services.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 
@@ -33,7 +34,8 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 app.use("/api/auth", authRoute);
-app.use("/api/user", usersRoute);
+app.use("/api/users", usersRoute);
+app.use("/api/services", servicesRoute);
 
 app.use((err, req, res, next) => {
   const errorStatus = err.status || 500;
