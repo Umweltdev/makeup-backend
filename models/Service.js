@@ -1,5 +1,8 @@
 import mongoose from "mongoose";
 const ServiceSchema = new mongoose.Schema({
+  id: {
+    type: Number,
+  },
    title: {
     type: String,
     required: true,
@@ -16,10 +19,13 @@ const ServiceSchema = new mongoose.Schema({
    },
    categories: {
     type: String,
-    enum: ["Single Services", "Class Services", "Event Services"],
+    enum: ["Single Services", "Class Services", "Event Services", "others"],
    },
    availability: {
     type: String
+   },
+   duration: {
+    type: String,
    },
    publish: {
       type: String,
