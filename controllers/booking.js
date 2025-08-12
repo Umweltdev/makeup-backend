@@ -1,4 +1,4 @@
-import express from "express";
+import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import Service from "../models/Service.js";
 import User from "../models/User.js";
@@ -8,9 +8,8 @@ import ServiceAvailability from "../models/ServiceAvailability.js";
 import AdditionalItem from "../models/AdditionalItem.js";
 import {
   generateRandomNumber,
-  generateRandomString,
+  //generateRandomString,
 } from "../utils/helpers.js";
-import cors from "cors";
 import { config } from "dotenv";
 import Stripe from "stripe";
 
@@ -18,23 +17,10 @@ config();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Helper function to check service availability
-const checkServiceAvailability = async (serviceId, checkIn, checkOut) => {
+const checkServiceAvailability = async (serviceId) => {
   const conflictingBooking = await ServiceAvailability.findOne({
     serviceId,
-    $or: [
-      {
-        startDate: { $lt: checkOut },
-        endDate: { $gt: checkIn },
-      },
-      {
-        startDate: { $lte: checkIn },
-        endDate: { $gte: checkIn },
-      },
-      {
-        startDate: { $lte: checkOut },
-        endDate: { $gte: checkOut },
-      },
-    ],
+    $or: []
   });
   return !conflictingBooking;
 };
@@ -86,15 +72,10 @@ const createBookingInvoice = async (bookingId) => {
     const invoiceItems = [
       // Service items
       ...booking.services.map((service) => ({
-        title: service.title,
-        description: service.description,
-        images: service.images,
-        categories: service.categories,
-        //price: service.price,
-        total: service.tPrice,
-        checkIn: service.checkIn,
-        checkOut: service.checkOut,
-        
+        title: service.serviceId.title,
+        description: service.serviceId.description,
+        images: service.serviceId.images,
+        categories: service.serviceId.categories,
       })),
       // Additional items if they exist
       ...(booking.additionalItems
@@ -147,7 +128,7 @@ export const handlePaymentSuccess = async (booking) => {
     await Promise.all(
       populatedBooking.services.map((service) =>
         new ServiceAvailability({
-          serviceId: service._id,
+          serviceId: service.serviceId,
           startDate: new Date(service.checkIn.setHours(14, 0, 0, 0)),
           endDate: service.checkOut,
           bookingId: populatedBooking._id,
@@ -410,113 +391,66 @@ export const checkoutBooking = async (req, res, next) => {
 
 export const cancelBooking = async (req, res, next) => {
   try {
-    const { bookingId } = req.params;
-    const { cancellationReason, cancellationType = "serviceCancelled" } =
-      req.body;
+    const { id } = req.params;
+    const { reason, cancelledBy } = req.body; // cancelledBy: 'customer' or 'admin'
 
-    const booking = await Booking.findById(bookingId)
-      .populate({
-        path: "services.serviceId",
-        populate: { path: "categories" },
-      })
-      .populate("customer");
+    // Find booking
+    const booking = await Booking.findById(id).populate("services.serviceId");
 
     if (!booking) {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    // Validate booking status
-    const validCancellationStatuses = ["pending", "paid", "checkedIn"];
-    if (!validCancellationStatuses.includes(booking.status)) {
-      return res.status(400).json({
-        error: `Cannot cancel booking in ${booking.status} status`,
-      });
+    if (booking.status === "cancelled") {
+      return res.status(400).json({ error: "Booking is already cancelled" });
     }
 
-    const now = new Date();
+    if (booking.status === "checkedOut") {
+      return res.status(400).json({ error: "Cannot cancel a checked-out booking" });
+    }
 
-    // Calculate refund details
-    const refundDetails = booking.services.map((service) => {
-      const checkIn = new Date(service.checkIn);
-      const checkOut = new Date(service.checkOut);
-      const totalNights = Math.ceil(
-        (checkOut - checkIn) / (1000 * 60 * 60 * 24)
-      );
-      const pricePerDay = service.serviceId.price;
-
-      let daysUsed = 0;
-      if (now > checkIn) {
-        const currentDayNoon = new Date(now);
-        currentDayNoon.setHours(12, 0, 0, 0);
-
-        if (now.getHours() >= 14) {
-          const nextDayNoon = new Date(currentDayNoon);
-          nextDayNoon.setDate(nextDayNoon.getDate() + 1);
-          daysUsed = Math.ceil(
-            (nextDayNoon - checkIn) / (1000 * 60 * 60 * 24)
-          );
-        } else {
-          daysUsed = Math.ceil(
-            (currentDayNoon - checkIn) / (1000 * 60 * 60 * 24)
-          );
-        }
-
-        daysUsed = Math.min(daysUsed, totalNights);
-      }
-
-      const nightsRemaining = totalNights - daysUsed;
-      const refundableAmount = nightsRemaining * pricePerDay;
-
-      return {
-        roomNumber: room.roomId.roomNumber,
-        serviceType: room.roomId.roomType.title,
-        checkIn: service.checkIn,
-        checkOut: service.checkOut,
-        originalPrice: service.tPrice,
-        pricePerDay,
-        totalNights,
-        daysUsed,
-        nightsRemaining,
-        refundableAmount,
-      };
-    });
-
-    const totalRefundAmount = refundDetails.reduce(
-      (sum, detail) => sum + detail.refundableAmount,
-      0
-    );
-
-    const cancellationFee = cancellationType === "guestCancelled" ? 0 : 0; // Adjust fee calculation as needed
-    const finalRefundAmount = totalRefundAmount - cancellationFee;
-
-    // Create cancellation record
-    const cancellation = new BookingCancellation({
-      booking: bookingId,
-      customer: booking.customer._id,
-      reason: cancellationReason,
-      cancellationType,
-      cancellationFee,
-      refundAmount: finalRefundAmount,
-      originalAmount: booking.totalPrice,
-      refundStatus: finalRefundAmount > 0 ? "pending" : "notApplicable",
-      cancellationDate: new Date(),
-      rooms: refundDetails,
-    });
-
-    await cancellation.save();
-    booking.status = finalRefundAmount > 0 ? "refunded" : "cancelled";
+    // Update booking status
+    booking.status = "cancelled";
     await booking.save();
-    await RoomAvailability.deleteMany({ bookingId });
+
+    // Remove related service availability
+    await ServiceAvailability.deleteMany({ bookingId: booking._id });
+
+    // Create a booking cancellation record
+    const cancellationRecord = new BookingCancellation({
+      booking: booking._id,
+      customer: booking.customer,
+      reason: reason || "No reason provided",
+      cancelledBy: cancelledBy || "system",
+      cancelledAt: new Date(),
+    });
+    await cancellationRecord.save();
 
     res.status(200).json({
       message: "Booking cancelled successfully",
-      cancellation: {
-        ...cancellation.toObject(),
-        roomDetails: refundDetails,
-      },
-      totalRefundAmount: finalRefundAmount,
-      cancellationFee,
+      bookingId: booking._id,
+      cancellationRecord,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getByBookingStatus = async (req, res, next) => {
+  try {
+    const checkedInStatus = await Booking.countDocuments({
+      status: "checkedIn",
+    });
+    const checkedOutStatus = await Booking.countDocuments({
+      status: "checkedOut",
+    });
+    const pendingStatus = await Booking.countDocuments({ status: "Pending" });
+
+    res.status(200).json([
+      { status: "checkedIn", count: checkedInStatus },
+      { status: "checkedOut", count: checkedOutStatus },
+      { status: "pending", count: pendingStatus },
+    ]);
   } catch (err) {
     next(err);
   }
