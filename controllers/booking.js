@@ -408,6 +408,120 @@ export const checkoutBooking = async (req, res, next) => {
   }
 };
 
+export const cancelBooking = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { cancellationReason, cancellationType = "serviceCancelled" } =
+      req.body;
+
+    const booking = await Booking.findById(bookingId)
+      .populate({
+        path: "services.serviceId",
+        populate: { path: "categories" },
+      })
+      .populate("customer");
+
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    // Validate booking status
+    const validCancellationStatuses = ["pending", "paid", "checkedIn"];
+    if (!validCancellationStatuses.includes(booking.status)) {
+      return res.status(400).json({
+        error: `Cannot cancel booking in ${booking.status} status`,
+      });
+    }
+
+    const now = new Date();
+
+    // Calculate refund details
+    const refundDetails = booking.services.map((service) => {
+      const checkIn = new Date(service.checkIn);
+      const checkOut = new Date(service.checkOut);
+      const totalNights = Math.ceil(
+        (checkOut - checkIn) / (1000 * 60 * 60 * 24)
+      );
+      const pricePerDay = service.serviceId.price;
+
+      let daysUsed = 0;
+      if (now > checkIn) {
+        const currentDayNoon = new Date(now);
+        currentDayNoon.setHours(12, 0, 0, 0);
+
+        if (now.getHours() >= 14) {
+          const nextDayNoon = new Date(currentDayNoon);
+          nextDayNoon.setDate(nextDayNoon.getDate() + 1);
+          daysUsed = Math.ceil(
+            (nextDayNoon - checkIn) / (1000 * 60 * 60 * 24)
+          );
+        } else {
+          daysUsed = Math.ceil(
+            (currentDayNoon - checkIn) / (1000 * 60 * 60 * 24)
+          );
+        }
+
+        daysUsed = Math.min(daysUsed, totalNights);
+      }
+
+      const nightsRemaining = totalNights - daysUsed;
+      const refundableAmount = nightsRemaining * pricePerDay;
+
+      return {
+        roomNumber: room.roomId.roomNumber,
+        serviceType: room.roomId.roomType.title,
+        checkIn: service.checkIn,
+        checkOut: service.checkOut,
+        originalPrice: service.tPrice,
+        pricePerDay,
+        totalNights,
+        daysUsed,
+        nightsRemaining,
+        refundableAmount,
+      };
+    });
+
+    const totalRefundAmount = refundDetails.reduce(
+      (sum, detail) => sum + detail.refundableAmount,
+      0
+    );
+
+    const cancellationFee = cancellationType === "guestCancelled" ? 0 : 0; // Adjust fee calculation as needed
+    const finalRefundAmount = totalRefundAmount - cancellationFee;
+
+    // Create cancellation record
+    const cancellation = new BookingCancellation({
+      booking: bookingId,
+      customer: booking.customer._id,
+      reason: cancellationReason,
+      cancellationType,
+      cancellationFee,
+      refundAmount: finalRefundAmount,
+      originalAmount: booking.totalPrice,
+      refundStatus: finalRefundAmount > 0 ? "pending" : "notApplicable",
+      cancellationDate: new Date(),
+      rooms: refundDetails,
+    });
+
+    await cancellation.save();
+    booking.status = finalRefundAmount > 0 ? "refunded" : "cancelled";
+    await booking.save();
+    await RoomAvailability.deleteMany({ bookingId });
+
+    res.status(200).json({
+      message: "Booking cancelled successfully",
+      cancellation: {
+        ...cancellation.toObject(),
+        roomDetails: refundDetails,
+      },
+      totalRefundAmount: finalRefundAmount,
+      cancellationFee,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // update checkin checkout date on client side for earlier checkout and later checkout
 export const updateBooking = async (req, res, next) => {
   try {
