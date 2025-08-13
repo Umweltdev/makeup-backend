@@ -8,6 +8,8 @@ import usersRoute from "./routes/users.js";
 import prepsRoute from "./routes/preps.js"
 import servicesRoute from "./routes/services.js";
 import invoiceRoute from "./routes/invoice.js";
+import inquiryRoute from "./routes/inquiry.js";
+import carouselRoute from "./routes/carousel.js";
 import bookingsRoute from "./routes/bookings.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -42,6 +44,8 @@ app.use("/api/services", servicesRoute);
 app.use("/api/preps", prepsRoute);
 app.use("/api/invoice", invoiceRoute);
 app.use("/api/booking", bookingsRoute);
+app.use("/api/inquiry", inquiryRoute);
+app.use("/api/carousel", carouselRoute);
 
 app.use((err, req, res, next) => {
   const errorStatus = err.status || 500;
