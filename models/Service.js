@@ -17,9 +17,6 @@ const ServiceSchema = new mongoose.Schema({
    images: {
     type: Array,
    },
-   description: {
-    type: String,
-   },
    categories: {
     type: String,
     enum: ["Single Services", "Class Services", "Event Services", "others"],
