@@ -17,13 +17,17 @@ config();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Helper function to check service availability
-const checkServiceAvailability = async (serviceId) => {
+/**const checkServiceAvailability = async (serviceId) => {
   const conflictingBooking = await ServiceAvailability.findOne({
     serviceId,
     $or: []
   });
   return !conflictingBooking;
+};**/
+const checkServiceAvailability = async () => {
+  return true;
 };
+
 
 async function initializeStripeCheckout(amount, customer, metadata) {
   const session = await stripe.checkout.sessions.create({
@@ -57,36 +61,37 @@ const createBookingInvoice = async (bookingId) => {
   try {
     // Get fully populated booking
     const booking = await Booking.findById(bookingId)
-      .populate({
-        path: "services.serviceId",
-        populate: {
-          path: "service",
-          select: "title description images price",
-        },
-      })
-      .populate("customer")
+  .populate({
+    path: "services.serviceId",
+    select: "title description images price categories",
+  })
+  .populate("customer");
 
     if (!booking) {
       throw new Error("Booking not found");
     }
     const invoiceItems = [
-      // Service items
-      ...booking.services.map((service) => ({
-        title: service.serviceId.title,
-        description: service.serviceId.description,
-        images: service.serviceId.images,
-        categories: service.serviceId.categories,
-      })),
-      // Additional items if they exist
-      ...(booking.additionalItems
-        ? booking.additionalItems.items.map((item) => ({
-            title: item.name,
-            quantity: item.quantity,
-            price: item.amount,
-            total: item.amount,
-          }))
-        : []),
-    ];
+  // Service items
+  ...booking.services.map((service) => ({
+    title: service.serviceId.title,
+    description: service.serviceId.description,
+    images: service.serviceId.images,
+    categories: service.serviceId.categories,
+    price: service.tPrice,
+    total: service.tPrice,
+    checkIn: service.checkIn,
+    checkOut: service.checkOut
+  })),
+  // Additional items if they exist
+  ...(booking.additionalItems
+    ? booking.additionalItems.items.map((item) => ({
+        title: item.name,
+        quantity: item.quantity,
+        price: item.amount,
+        total: item.amount,
+      }))
+    : []),
+];
 
     const invoice = new Invoice({
       invoiceFrom: {
@@ -200,7 +205,7 @@ export const createBooking = async (req, res, next) => {
         checkOut
       );
 
-      if (!isAvailable || !serviceDoc.isAvailable) {
+      if (!isAvailable) {
         unavailableServices.push(serviceDoc);
       } else {
         availableServices.push({
@@ -444,7 +449,7 @@ export const getByBookingStatus = async (req, res, next) => {
     const checkedOutStatus = await Booking.countDocuments({
       status: "checkedOut",
     });
-    const pendingStatus = await Booking.countDocuments({ status: "Pending" });
+    const pendingStatus = await Booking.countDocuments({ status: "pending" });
 
     res.status(200).json([
       { status: "checkedIn", count: checkedInStatus },

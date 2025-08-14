@@ -21,8 +21,9 @@ const ServiceSchema = new mongoose.Schema({
     type: String,
     enum: ["Single Services", "Class Services", "Event Services", "others"],
    },
-   availability: {
-    type: String
+   isAvailable: {
+    type: Boolean,
+    default: true
    },
    duration: {
     type: String,
