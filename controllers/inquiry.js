@@ -5,10 +5,18 @@ import Inquiry from "../models/Inquiry.js";
  */
 export const createInquiry = async (req, res) => {
   try {
+    // If req.user doesn't have _id but has id, use that
+    const userId = req.user._id || req.user.id;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "User ID not found in token" });
+    }
+
     const inquiry = new Inquiry({
       ...req.body,
-      customer: req.user._id,
+      customer: userId,
     });
+    
     await inquiry.save();
     res.status(201).json(inquiry);
   } catch (error) {
