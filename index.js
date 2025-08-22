@@ -11,6 +11,7 @@ import invoiceRoute from "./routes/invoice.js";
 import inquiryRoute from "./routes/inquiry.js";
 import carouselRoute from "./routes/carousel.js";
 import bookingsRoute from "./routes/bookings.js";
+import mailchimpRoutes from './routes/mailchimp.js';
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import swaggerJsdoc from "swagger-jsdoc";
@@ -124,6 +125,7 @@ app.use("/api/invoice", invoiceRoute);
 app.use("/api/booking", bookingsRoute);
 app.use("/api/inquiry", inquiryRoute);
 app.use("/api/carousel", carouselRoute);
+app.use('/api/mailchimp', mailchimpRoutes);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
